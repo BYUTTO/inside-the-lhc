@@ -27,3 +27,6 @@ verified at build.
 - [x] On-rails first-person ride (demo path)
 - [x] Material realism pass (PBR magnets/tunnel + HDRI reflections)
 - [x] Free-roam mode (drag-to-look + WASD fly)
+- [x] Distinct components: dipoles, RF cavities, quadrupoles, beam pipe, ATLAS
+- [x] Component labels in free-roam (name + one-line description)
+- [x] Collision hero shot: held, drag-to-orbit, multi-colour spray, replay

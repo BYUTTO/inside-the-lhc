@@ -55,6 +55,18 @@
              border: 1px solid rgba(120,150,220,.3); border-radius: 999px; padding: 8px 16px; backdrop-filter: blur(6px); transition: background .15s; }
   #freeBtn:hover { background: rgba(40,56,96,.8); }
   #freeBtn.hidden { display: none; }
+  #collisionBar { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); z-index: 9; display: flex; gap: 10px; }
+  #collisionBar.hidden { display: none; }
+  #collisionBar button { pointer-events: auto; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
+    color: #eaf2ff; background: rgba(20,28,48,.72); border: 1px solid rgba(120,150,220,.35); border-radius: 999px; padding: 9px 18px; backdrop-filter: blur(6px); transition: background .15s; }
+  #collisionBar button:hover { background: rgba(44,60,100,.9); }
+  #labels { position: fixed; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
+  .label3d { position: absolute; transform: translate(-50%,-140%); background: rgba(8,12,22,.74); border: 1px solid rgba(120,150,220,.3);
+    border-radius: 8px; padding: 5px 10px; white-space: nowrap; }
+  .label3d::after { content:''; position:absolute; left:50%; bottom:-5px; width:8px; height:8px; transform:translateX(-50%) rotate(45deg); background: rgba(8,12,22,.74); border-right:1px solid rgba(120,150,220,.3); border-bottom:1px solid rgba(120,150,220,.3); }
+  .label3d .n { font-size: 12px; font-weight: 650; color: #dbe6ff; }
+  .label3d .d { font-size: 10.5px; color: #9fb6e6; margin-top: 1px; }
+  .label3d.hidden { display: none; }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 20; background:#05060a; color:#7f9bd6; font-size:14px; letter-spacing:.1em; }
 </style>
 </head>
@@ -84,6 +96,12 @@
 
 <button id="freeBtn">&#9671; Free-roam</button>
 <div id="freeHint" class="hidden"><b>Drag</b> to look &middot; <b>WASD</b> move &middot; <b>Space / C</b> up &amp; down &middot; <b>Shift</b> boost &nbsp;&nbsp;<a id="freeExit">Exit &times;</a></div>
+<div id="collisionBar" class="hidden">
+  <button id="replayBtn">&#8635; Replay collision</button>
+  <button id="cbRide">Ride again</button>
+  <button id="cbFree">Free-roam</button>
+</div>
+<div id="labels"></div>
 
 <script type="importmap">
 { "imports": {
@@ -173,6 +191,34 @@ for (let i = 0; i < N; i++) {
 cryo.instanceMatrix.needsUpdate = flanges.instanceMatrix.needsUpdate = cradles.instanceMatrix.needsUpdate = true;
 scene.add(cryo, flanges, cradles);
 
+// ---------- RF cavities (copper accelerating cells) at ~t=0.45 ----------
+const rfMat = new THREE.MeshStandardMaterial({ color: 0xcf8f3e, metalness: 1, roughness: 0.24 });
+const zAxis = new THREE.Vector3(0, 0, 1);
+const rfAnchor = path.getPointAt(0.45).clone();
+for (let i = 0; i < 5; i++) {
+  const tt = 0.42 + i * 0.014;
+  const { p, tan } = frameAt(tt);
+  const cell = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.75, 1.7, 26), rfMat);
+  cell.quaternion.setFromUnitVectors(yAxis, tan); cell.position.copy(p); scene.add(cell);
+  const bulge = new THREE.Mesh(new THREE.TorusGeometry(1.78, 0.42, 12, 30), rfMat);
+  bulge.quaternion.setFromUnitVectors(zAxis, tan); bulge.position.copy(p); scene.add(bulge);
+}
+
+// ---------- Quadrupoles (red focusing magnets) at ~t=0.84 ----------
+const quadMat = new THREE.MeshPhysicalMaterial({ color: 0xc23a34, metalness: 0.4, roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.3 });
+const quadAnchor = path.getPointAt(0.845).clone();
+for (let i = 0; i < 2; i++) {
+  const tt = 0.83 + i * 0.02;
+  const { p, tan } = frameAt(tt);
+  const q2 = new THREE.Quaternion().setFromUnitVectors(yAxis, tan);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 5.0, 26), quadMat);
+  body.quaternion.copy(q2); body.position.copy(p); scene.add(body);
+  for (const e of [-2.5, 2.5]) {
+    const fl = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.4, 28), steelMat);
+    fl.quaternion.copy(q2); fl.position.copy(p).addScaledVector(tan, e); scene.add(fl);
+  }
+}
+
 // ---------- Lighting ----------
 scene.add(new THREE.HemisphereLight(0x9fc0ff, 0x0a0c12, 0.8));
 scene.add(new THREE.AmbientLight(0x2a3346, 0.6));
@@ -201,24 +247,50 @@ const flash = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 24), new THREE.Mesh
 flash.position.copy(collisionPt); scene.add(flash);
 let flashLife = -1;
 let spray = null;
+const sprayPalette = [[0.66,0.95,1],[1,1,1],[1,0.72,0.36],[0.82,0.6,1],[0.55,1,0.82]];
 function fireCollision(){
   detector.visible = true; flashLife = 0;
-  const M = 520, g = new THREE.BufferGeometry(), pos = new Float32Array(M*6), dirs = [];
-  for (let i=0;i<M;i++){ const dir = new THREE.Vector3().randomDirection(); dirs.push(dir); const o=collisionPt; pos.set([o.x,o.y,o.z,o.x,o.y,o.z], i*6); }
+  const M = 720, g = new THREE.BufferGeometry(), pos = new Float32Array(M*6), col = new Float32Array(M*6), dirs = [];
+  for (let i=0;i<M;i++){ const dir = new THREE.Vector3().randomDirection(); dirs.push(dir); const o=collisionPt; pos.set([o.x,o.y,o.z,o.x,o.y,o.z], i*6);
+    const c = sprayPalette[i % sprayPalette.length]; col.set([c[0],c[1],c[2],c[0],c[1],c[2]], i*6); }
   g.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  spray = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xa8f4ff, transparent:true, opacity:0.95, blending: THREE.AdditiveBlending, depthWrite:false }));
+  g.setAttribute('color', new THREE.BufferAttribute(col,3));
+  spray = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors:true, transparent:true, opacity:0.95, blending: THREE.AdditiveBlending, depthWrite:false }));
   spray.userData = { dirs, life: 0, origin: collisionPt.clone() }; scene.add(spray);
   showStation(collisionCap);
 }
 function updateSpray(dt){
-  if (flashLife >= 0){ flashLife += dt; flash.scale.setScalar(1 + flashLife*46); flash.material.opacity = Math.max(0, 1 - flashLife*1.7); collisionLight.intensity = Math.max(0, 90 * (1 - flashLife*1.4)); }
+  if (flashLife >= 0){ flashLife += dt; flash.scale.setScalar(1 + flashLife*13); flash.material.opacity = Math.max(0, 0.9 - flashLife*2.6); collisionLight.intensity = Math.max(0, 62 * (1 - flashLife*2.1)); }
   if(!spray) return; spray.userData.life += dt; const L = spray.userData.life;
   const pos = spray.geometry.attributes.position.array, { dirs, origin } = spray.userData;
-  for(let i=0;i<dirs.length;i++){ const reach=Math.min(L*58,22+i%16), tail=Math.max(0,reach-3.6);
+  for(let i=0;i<dirs.length;i++){ const reach=Math.min(L*46,26+i%20), tail=Math.max(0,reach-4.2);
     const ax=origin.x+dirs[i].x*tail, ay=origin.y+dirs[i].y*tail, az=origin.z+dirs[i].z*tail;
     const bx=origin.x+dirs[i].x*reach, by=origin.y+dirs[i].y*reach, bz=origin.z+dirs[i].z*reach;
     pos.set([ax,ay,az,bx,by,bz], i*6); }
-  spray.geometry.attributes.position.needsUpdate = true; spray.material.opacity = Math.max(0, 0.95 - L*0.14);
+  spray.geometry.attributes.position.needsUpdate = true; spray.material.opacity = Math.max(0, 0.95 - L*0.075);
+}
+
+// ---------- Component labels (projected HTML, shown in free-roam) ----------
+const labelDefs = [
+  { n:'Beam pipe', d:'Protons fly through this vacuum tube', pos: path.getPointAt(0.06) },
+  { n:'Dipole magnet', d:'Bends the beam - 1,232 at 1.9 K', pos: path.getPointAt(0.12) },
+  { n:'RF cavity', d:'Accelerates protons each lap', pos: rfAnchor },
+  { n:'Quadrupole', d:'Focuses & steers the beam', pos: quadAnchor },
+  { n:'ATLAS detector', d:'Where the beams collide', pos: collisionPt.clone() },
+];
+const labelsEl = document.getElementById('labels');
+const labelNodes = labelDefs.map(L => { const el = document.createElement('div'); el.className = 'label3d hidden'; el.innerHTML = `<div class="n">${L.n}</div><div class="d">${L.d}</div>`; labelsEl.appendChild(el); return el; });
+const _lv = new THREE.Vector3();
+function updateLabels(show){
+  for (let i = 0; i < labelDefs.length; i++){
+    const el = labelNodes[i];
+    if (!show){ el.classList.add('hidden'); continue; }
+    _lv.copy(labelDefs[i].pos); const dist = camera.position.distanceTo(_lv); _lv.project(camera);
+    if (_lv.z > 1 || dist > 230){ el.classList.add('hidden'); continue; }
+    el.style.left = ((_lv.x * 0.5 + 0.5) * innerWidth) + 'px';
+    el.style.top  = ((-_lv.y * 0.5 + 0.5) * innerHeight) + 'px';
+    el.classList.remove('hidden');
+  }
 }
 
 // ---------- Stations ----------
@@ -249,22 +321,21 @@ function updateHUD(t){
 let mouseX = 0, mouseY = 0;
 addEventListener('mousemove', e => { mouseX = (e.clientX/innerWidth - 0.5)*2; mouseY = (e.clientY/innerHeight - 0.5)*2; });
 let riding = false, t = 0, done = false, arrived = false, arriveClock = 0, freeRoam = false;
+let orbAz = 0.5, orbEl = 5.4, orbR = 14, cbShown = false;
 const RIDE_SECONDS = 46;
-const camTarget = new THREE.Vector3();
+const camTarget = new THREE.Vector3(), heroPos = new THREE.Vector3();
+const collisionBar = document.getElementById('collisionBar');
 function updateCamera(dt){
-  if (riding && !done && !arrived){ t += dt / RIDE_SECONDS; if (t >= 0.972){ t = 0.972; arrived = true; arriveClock = 0; fireCollision(); } }
+  if (riding && !done && !arrived){ t += dt / RIDE_SECONDS; if (t >= 0.972){ t = 0.972; arrived = true; arriveClock = 0; orbAz = 0.5; orbEl = 5.4; orbR = 14; cbShown = false; fireCollision(); } }
   if (arrived){
     arriveClock += dt;
+    if (!dragging) orbAz += dt * 0.16;                         // gentle auto-orbit; drag to take control
     const f = frameAt(0.985);
-    const ang = 0.35 + arriveClock * 0.22;                      // slow orbit around the collision
-    camera.position.copy(collisionPt)
-      .addScaledVector(f.side, Math.cos(ang) * 11 + 1.5)
-      .addScaledVector(upV, 5.2)
-      .addScaledVector(f.tan, -8 + Math.sin(ang) * 3);
+    heroPos.copy(collisionPt).addScaledVector(f.side, Math.cos(orbAz) * orbR).addScaledVector(f.tan, Math.sin(orbAz) * orbR).addScaledVector(upV, orbEl);
+    camera.position.lerp(heroPos, 0.09);                       // smooth glide in, then follow the orbit
     camera.lookAt(collisionPt);
-    camera.rotateY(-mouseX * 0.22); camera.rotateX(-mouseY * 0.16);
-    protonLight.intensity = 4;
-    if (arriveClock > 3.8 && !done) finish();
+    protonLight.intensity = 3;
+    if (!cbShown && arriveClock > 2.0){ cbShown = true; collisionBar.classList.remove('hidden'); }
   } else {
     const { p, tan, side } = frameAt(t);
     camera.position.copy(p).addScaledVector(side, 3.4).addScaledVector(upV, 0.7);
@@ -286,6 +357,7 @@ function animate(){
   updateSpray(dt);
   for (let i=0;i<keyLights.length;i++){ const lt = clamp(t + (i - keyLights.length/2)*0.022, 0, 1); keyLights[i].position.copy(path.getPointAt(lt)).addScaledVector(upV, 3.2); }
   protonLight.position.copy(camera.position);
+  updateLabels(freeRoam);
   if (capTimer > 0){ capTimer -= dt; if (capTimer <= 0) capEl.classList.remove('on'); }
   renderer.render(scene, camera);
 }
@@ -293,7 +365,7 @@ animate();
 
 // ---------- Flow ----------
 const startOv = document.getElementById('start'), endOv = document.getElementById('end'), hud = document.getElementById('hud');
-function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; }
+function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); collisionBar.classList.add('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; }
 function finish(){ done=true; riding=false; setTimeout(()=>{ endOv.classList.remove('hidden'); hud.classList.remove('on'); }, 1700); }
 document.getElementById('startBtn').onclick = begin;
 document.getElementById('againBtn').onclick = begin;
@@ -307,7 +379,7 @@ const fwd = new THREE.Vector3(), rgt = new THREE.Vector3();
 function enterFree(){
   riding = false; arrived = false; freeRoam = true;
   startOv.classList.add('hidden'); endOv.classList.add('hidden');
-  hud.classList.remove('on'); capEl.classList.remove('on');
+  hud.classList.remove('on'); capEl.classList.remove('on'); collisionBar.classList.add('hidden');
   freeBtn.classList.add('hidden'); freeHint.classList.remove('hidden');
   const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); yaw = e.y; pitch = e.x;
 }
@@ -315,14 +387,17 @@ function exitFreeToRide(){ freeRoam = false; dragging = false; freeHint.classLis
 freeBtn.onclick = enterFree;
 document.getElementById('endFreeBtn').onclick = enterFree;
 document.getElementById('freeExit').onclick = exitFreeToRide;
-renderer.domElement.addEventListener('mousedown', e => { if (freeRoam){ dragging = true; lastX = e.clientX; lastY = e.clientY; } });
+renderer.domElement.addEventListener('mousedown', e => { if (freeRoam || arrived){ dragging = true; lastX = e.clientX; lastY = e.clientY; } });
 addEventListener('mouseup', () => { dragging = false; });
 addEventListener('mousemove', e => {
-  if (!freeRoam || !dragging) return;
-  yaw   -= (e.clientX - lastX) * 0.0026;
-  pitch  = clamp(pitch - (e.clientY - lastY) * 0.0026, -1.45, 1.45);
-  lastX = e.clientX; lastY = e.clientY;
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY;
+  if (freeRoam){ yaw -= dx * 0.0026; pitch = clamp(pitch - dy * 0.0026, -1.45, 1.45); }
+  else if (arrived){ orbAz -= dx * 0.006; orbEl = clamp(orbEl + dy * 0.06, -8, 18); }
 });
+document.getElementById('replayBtn').onclick = () => { if (spray){ scene.remove(spray); spray = null; } arriveClock = 0; cbShown = false; collisionBar.classList.add('hidden'); fireCollision(); };
+document.getElementById('cbRide').onclick = () => { collisionBar.classList.add('hidden'); begin(); };
+document.getElementById('cbFree').onclick = () => { collisionBar.classList.add('hidden'); enterFree(); };
 addEventListener('keydown', e => { if (!freeRoam) return; switch(e.code){
   case 'KeyW': mv.f=1; break; case 'KeyS': mv.b=1; break; case 'KeyA': mv.l=1; break; case 'KeyD': mv.r=1; break;
   case 'Space': mv.u=1; e.preventDefault(); break; case 'KeyC': mv.d=1; break;
