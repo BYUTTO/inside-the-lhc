@@ -55,6 +55,11 @@
              border: 1px solid rgba(120,150,220,.3); border-radius: 999px; padding: 8px 16px; backdrop-filter: blur(6px); transition: background .15s; }
   #freeBtn:hover { background: rgba(40,56,96,.8); }
   #freeBtn.hidden { display: none; }
+  #povBtn { position: fixed; top: 16px; right: 150px; z-index: 12; pointer-events: auto; cursor: pointer;
+            font: inherit; font-size: 13px; font-weight: 600; color: #cfe0ff; background: rgba(20,28,48,.55);
+            border: 1px solid rgba(120,150,220,.3); border-radius: 999px; padding: 8px 16px; backdrop-filter: blur(6px); transition: background .15s; }
+  #povBtn:hover { background: rgba(40,56,96,.8); }
+  #povBtn.hidden { display: none; }
   #youAre { position: fixed; top: 15px; left: 18px; z-index: 7; font-size: 12.5px; font-weight: 600; color: #cfe0ff;
             background: rgba(20,28,48,.5); border: 1px solid rgba(120,150,220,.25); border-radius: 999px; padding: 7px 15px; backdrop-filter: blur(6px); }
   #youAre.hidden { display: none; }
@@ -103,6 +108,7 @@
   </div>
 </div>
 
+<button id="povBtn">&#9673; Proton view</button>
 <button id="freeBtn">&#9671; Free-roam</button>
 <div id="freeHint" class="hidden"><b>Drag</b> to look &middot; <b>WASD</b> move &middot; <b>Space / C</b> up &amp; down &middot; <b>Shift</b> boost &nbsp;&nbsp;<a id="freeExit">Exit &times;</a></div>
 <div id="collisionBar" class="hidden">
@@ -174,26 +180,27 @@ scene.add(new THREE.Mesh(new THREE.TubeGeometry(path, 800, 0.42, 8, false), new 
 // ---------- Dipole magnets: continuous line of blue flanged cryostats ----------
 const MOD = 5.4;                              // module length
 const N = Math.floor(pathLen / MOD);          // ~200 modules end-to-end
-const cryoMat = new THREE.MeshPhysicalMaterial({ color: 0x1c50d8, metalness: 0.35, roughness: 0.34, clearcoat: 0.7, clearcoatRoughness: 0.28 });
+const cryoMat = new THREE.MeshPhysicalMaterial({ color: 0x1c50d8, metalness: 0.35, roughness: 0.34, clearcoat: 0.7, clearcoatRoughness: 0.28, emissive: 0x123bb0, emissiveIntensity: 1.15 });
 const steelMat = new THREE.MeshStandardMaterial({ color: 0x9da2ab, metalness: 1.0, roughness: 0.28 });     // machined steel flanges
 const cradleMat = new THREE.MeshStandardMaterial({ color: 0x30333b, metalness: 0.85, roughness: 0.5 });    // dark support steel
 
-const cryoGeo = new THREE.CylinderGeometry(1.55, 1.55, MOD * 0.9, 26);
-const flangeGeo = new THREE.CylinderGeometry(1.74, 1.74, 0.42, 28);
+cryoMat.side = THREE.DoubleSide;
+const cryoGeo = new THREE.CylinderGeometry(1.55, 1.55, MOD * 0.9, 26, 1, true);   // open bore
+const flangeGeo = new THREE.TorusGeometry(1.6, 0.11, 10, 30);                     // ring flange (holed)
 const cradleGeo = new THREE.BoxGeometry(1.3, 1.2, 2.4);
 
 const cryo = new THREE.InstancedMesh(cryoGeo, cryoMat, N);
 const flanges = new THREE.InstancedMesh(flangeGeo, steelMat, N * 2);
 const cradles = new THREE.InstancedMesh(cradleGeo, cradleMat, N);
-const d = new THREE.Object3D(), q = new THREE.Quaternion(), yAxis = new THREE.Vector3(0,1,0);
+const d = new THREE.Object3D(), q = new THREE.Quaternion(), qf = new THREE.Quaternion(), yAxis = new THREE.Vector3(0,1,0), zAxis = new THREE.Vector3(0,0,1);
 let fi = 0;
 for (let i = 0; i < N; i++) {
   const t = (i + 0.5) / N;
   const { p, tan } = frameAt(t);
-  q.setFromUnitVectors(yAxis, tan);
+  q.setFromUnitVectors(yAxis, tan); qf.setFromUnitVectors(zAxis, tan);
   d.position.copy(p); d.quaternion.copy(q); d.updateMatrix(); cryo.setMatrixAt(i, d.matrix);
   for (const e of [-MOD*0.47, MOD*0.47]) {
-    d.position.copy(p).addScaledVector(tan, e); d.quaternion.copy(q); d.updateMatrix(); flanges.setMatrixAt(fi++, d.matrix);
+    d.position.copy(p).addScaledVector(tan, e); d.quaternion.copy(qf); d.updateMatrix(); flanges.setMatrixAt(fi++, d.matrix);
   }
   d.position.copy(p).addScaledVector(upV, -1.85); d.quaternion.copy(q); d.updateMatrix(); cradles.setMatrixAt(i, d.matrix);
 }
@@ -201,30 +208,30 @@ cryo.instanceMatrix.needsUpdate = flanges.instanceMatrix.needsUpdate = cradles.i
 scene.add(cryo, flanges, cradles);
 
 // ---------- RF cavities (copper accelerating cells) at ~t=0.45 ----------
-const rfMat = new THREE.MeshStandardMaterial({ color: 0xcf8f3e, metalness: 1, roughness: 0.24 });
-const zAxis = new THREE.Vector3(0, 0, 1);
+const rfMat = new THREE.MeshStandardMaterial({ color: 0xcf8f3e, metalness: 1, roughness: 0.24, side: THREE.DoubleSide });
 const rfAnchor = path.getPointAt(0.45).clone();
 for (let i = 0; i < 5; i++) {
   const tt = 0.42 + i * 0.014;
   const { p, tan } = frameAt(tt);
-  const cell = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.75, 1.7, 26), rfMat);
+  const cell = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.75, 1.7, 26, 1, true), rfMat);
   cell.quaternion.setFromUnitVectors(yAxis, tan); cell.position.copy(p); scene.add(cell);
   const bulge = new THREE.Mesh(new THREE.TorusGeometry(1.78, 0.42, 12, 30), rfMat);
   bulge.quaternion.setFromUnitVectors(zAxis, tan); bulge.position.copy(p); scene.add(bulge);
 }
 
 // ---------- Quadrupoles (red focusing magnets) at ~t=0.84 ----------
-const quadMat = new THREE.MeshPhysicalMaterial({ color: 0xc23a34, metalness: 0.4, roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.3 });
+const quadMat = new THREE.MeshPhysicalMaterial({ color: 0xc23a34, metalness: 0.4, roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.3, side: THREE.DoubleSide });
 const quadAnchor = path.getPointAt(0.845).clone();
 for (let i = 0; i < 2; i++) {
   const tt = 0.83 + i * 0.02;
   const { p, tan } = frameAt(tt);
   const q2 = new THREE.Quaternion().setFromUnitVectors(yAxis, tan);
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 5.0, 26), quadMat);
+  const q2f = new THREE.Quaternion().setFromUnitVectors(zAxis, tan);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 5.0, 26, 1, true), quadMat);
   body.quaternion.copy(q2); body.position.copy(p); scene.add(body);
   for (const e of [-2.5, 2.5]) {
-    const fl = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.4, 28), steelMat);
-    fl.quaternion.copy(q2); fl.position.copy(p).addScaledVector(tan, e); scene.add(fl);
+    const fl = new THREE.Mesh(new THREE.TorusGeometry(1.58, 0.11, 10, 28), steelMat);
+    fl.quaternion.copy(q2f); fl.position.copy(p).addScaledVector(tan, e); scene.add(fl);
   }
 }
 
@@ -314,7 +321,7 @@ const stations = [
 const collisionCap = { title: 'The collision', body: "You're now inside the ATLAS detector - the giant barrel of sensor layers around you. You (the proton) just hit another proton coming the other way, and the crash energy turned into a spray of brand-new particles. Measuring where they fly is how physicists find out what the universe is made of." };
 let nextStation = 0, capTimer = 0;
 const capEl = document.getElementById('caption'), capTitle = document.getElementById('capTitle'), capBody = document.getElementById('capBody');
-function showStation(s){ capTitle.textContent = s.title; capBody.textContent = s.body; capEl.classList.add('on'); capTimer = 5.4; }
+function showStation(s){ capTitle.textContent = s.title; capBody.textContent = s.body; capEl.classList.add('on'); capTimer = 9.5; }
 
 // ---------- HUD ----------
 const energyVal = document.getElementById('energyVal'), energyUnit = document.getElementById('energyUnit'), speedVal = document.getElementById('speedVal');
@@ -331,7 +338,7 @@ function updateHUD(t){
 let mouseX = 0, mouseY = 0;
 addEventListener('mousemove', e => { mouseX = (e.clientX/innerWidth - 0.5)*2; mouseY = (e.clientY/innerHeight - 0.5)*2; });
 let riding = false, t = 0, done = false, arrived = false, arriveClock = 0, freeRoam = false;
-let orbAz = 0.5, orbEl = 5.4, orbR = 14, cbShown = false;
+let orbAz = 0.5, orbEl = 5.4, orbR = 14, cbShown = false, povMode = 'ride';
 const RIDE_SECONDS = 46;
 const camTarget = new THREE.Vector3(), heroPos = new THREE.Vector3();
 const collisionBar = document.getElementById('collisionBar'), youAre = document.getElementById('youAre'), legend = document.getElementById('legend');
@@ -349,8 +356,13 @@ function updateCamera(dt){
     if (!cbShown && arriveClock > 2.0){ cbShown = true; collisionBar.classList.remove('hidden'); }
   } else {
     const { p, tan, side } = frameAt(t);
-    camera.position.copy(p).addScaledVector(side, 3.4).addScaledVector(upV, 0.7);
-    camTarget.copy(p).addScaledVector(tan, 8);
+    if (povMode === 'proton'){                                 // riding inside the beam pipe, looking forward
+      camera.position.copy(p).addScaledVector(upV, 0.7);
+      camTarget.copy(p).addScaledVector(tan, 12).addScaledVector(upV, -0.1);
+    } else {                                                   // cinematic ride-along beside the magnet line
+      camera.position.copy(p).addScaledVector(side, 3.4).addScaledVector(upV, 0.7);
+      camTarget.copy(p).addScaledVector(tan, 8);
+    }
     camera.lookAt(camTarget);
     camera.rotateY(-mouseX * 0.5); camera.rotateX(-mouseY * 0.32);
     protonLight.intensity = 16;
@@ -376,7 +388,7 @@ animate();
 
 // ---------- Flow ----------
 const startOv = document.getElementById('start'), endOv = document.getElementById('end'), hud = document.getElementById('hud');
-function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); collisionBar.classList.add('hidden'); youAre.classList.remove('hidden'); legend.classList.add('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; }
+function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); collisionBar.classList.add('hidden'); youAre.classList.remove('hidden'); legend.classList.add('hidden'); povBtn.classList.remove('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; }
 function finish(){ done=true; riding=false; setTimeout(()=>{ endOv.classList.remove('hidden'); hud.classList.remove('on'); }, 1700); }
 document.getElementById('startBtn').onclick = begin;
 document.getElementById('againBtn').onclick = begin;
@@ -392,13 +404,17 @@ function enterFree(){
   startOv.classList.add('hidden'); endOv.classList.add('hidden');
   hud.classList.remove('on'); capEl.classList.remove('on'); collisionBar.classList.add('hidden');
   youAre.classList.add('hidden'); legend.classList.remove('hidden');
-  freeBtn.classList.add('hidden'); freeHint.classList.remove('hidden');
+  freeBtn.classList.add('hidden'); povBtn.classList.add('hidden'); freeHint.classList.remove('hidden');
   const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); yaw = e.y; pitch = e.x;
 }
 function exitFreeToRide(){ freeRoam = false; dragging = false; freeHint.classList.add('hidden'); freeBtn.classList.remove('hidden'); begin(); }
 freeBtn.onclick = enterFree;
 document.getElementById('endFreeBtn').onclick = enterFree;
 document.getElementById('freeExit').onclick = exitFreeToRide;
+const povBtn = document.getElementById('povBtn');
+function setPov(m){ povMode = m; povBtn.textContent = (m === 'ride') ? '◉ Proton view' : '◈ Ride-along view'; }
+povBtn.onclick = () => setPov(povMode === 'ride' ? 'proton' : 'ride');
+addEventListener('keydown', e => { if (e.code === 'KeyV' && !freeRoam) setPov(povMode === 'ride' ? 'proton' : 'ride'); });
 renderer.domElement.addEventListener('mousedown', e => { if (freeRoam || arrived){ dragging = true; lastX = e.clientX; lastY = e.clientY; } });
 addEventListener('mouseup', () => { dragging = false; });
 addEventListener('mousemove', e => {
