@@ -263,6 +263,15 @@ const flash = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 24), new THREE.Mesh
 flash.position.copy(collisionPt); scene.add(flash);
 let flashLife = -1;
 let spray = null;
+
+// ---------- The two protons (chase target + the incoming one) ----------
+const protonGeo = new THREE.SphereGeometry(0.4, 20, 20);
+const youProton = new THREE.Mesh(protonGeo, new THREE.MeshBasicMaterial({ color: 0xfff0c0 }));
+youProton.add(new THREE.Mesh(new THREE.SphereGeometry(0.9, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffcf66, transparent: true, opacity: 0.33, blending: THREE.AdditiveBlending, depthWrite: false })));
+const otherProton = new THREE.Mesh(protonGeo, new THREE.MeshBasicMaterial({ color: 0xcdeeff }));
+otherProton.add(new THREE.Mesh(new THREE.SphereGeometry(0.9, 16, 16), new THREE.MeshBasicMaterial({ color: 0x66c0ff, transparent: true, opacity: 0.33, blending: THREE.AdditiveBlending, depthWrite: false })));
+youProton.visible = false; otherProton.visible = false;
+scene.add(youProton, otherProton);
 const sprayPalette = [[0.66,0.95,1],[1,1,1],[1,0.72,0.36],[0.82,0.6,1],[0.55,1,0.82]];
 function fireCollision(){
   detector.visible = true; flashLife = 0;
@@ -276,8 +285,9 @@ function fireCollision(){
   showStation(collisionCap);
 }
 function updateSpray(dt){
-  if (flashLife >= 0){ flashLife += dt; flash.scale.setScalar(1 + flashLife*13); flash.material.opacity = Math.max(0, 0.9 - flashLife*2.6); collisionLight.intensity = Math.max(0, 62 * (1 - flashLife*2.1)); }
-  if(!spray) return; spray.userData.life += dt; const L = spray.userData.life;
+  const sdt = dt * 0.4;                                         // slow-motion collision
+  if (flashLife >= 0){ flashLife += sdt; flash.scale.setScalar(1 + flashLife*13); flash.material.opacity = Math.max(0, 0.9 - flashLife*2.6); collisionLight.intensity = Math.max(0, 62 * (1 - flashLife*2.1)); }
+  if(!spray) return; spray.userData.life += sdt; const L = spray.userData.life;
   const pos = spray.geometry.attributes.position.array, { dirs, origin } = spray.userData;
   for(let i=0;i<dirs.length;i++){ const reach=Math.min(L*46,26+i%20), tail=Math.max(0,reach-4.2);
     const ax=origin.x+dirs[i].x*tail, ay=origin.y+dirs[i].y*tail, az=origin.z+dirs[i].z*tail;
@@ -338,12 +348,12 @@ function updateHUD(t){
 let mouseX = 0, mouseY = 0;
 addEventListener('mousemove', e => { mouseX = (e.clientX/innerWidth - 0.5)*2; mouseY = (e.clientY/innerHeight - 0.5)*2; });
 let riding = false, t = 0, done = false, arrived = false, arriveClock = 0, freeRoam = false;
-let orbAz = 0.5, orbEl = 5.4, orbR = 14, cbShown = false, povMode = 'ride';
+let orbAz = 0.5, orbEl = 5.4, orbR = 14, cbShown = false, povMode = 'ride', collFired = false;
 const RIDE_SECONDS = 46;
 const camTarget = new THREE.Vector3(), heroPos = new THREE.Vector3();
 const collisionBar = document.getElementById('collisionBar'), youAre = document.getElementById('youAre'), legend = document.getElementById('legend');
 function updateCamera(dt){
-  if (riding && !done && !arrived){ t += dt / RIDE_SECONDS; if (t >= 0.972){ t = 0.972; arrived = true; arriveClock = 0; orbAz = 0.5; orbEl = 5.4; orbR = 14; cbShown = false; fireCollision(); } }
+  if (riding && !done && !arrived){ t += (dt / RIDE_SECONDS) * (t > 0.9 ? 0.28 : 1); if (t >= 0.95){ t = 0.95; arrived = true; arriveClock = 0; orbAz = 0.5; orbEl = 5.4; orbR = 14; cbShown = false; collFired = false; } }
   if (arrived){
     arriveClock += dt;
     if (!dragging) orbAz += dt * 0.16;                         // gentle auto-orbit; drag to take control
@@ -352,13 +362,22 @@ function updateCamera(dt){
     camera.position.lerp(heroPos, 0.09);                       // smooth glide in, then follow the orbit
     camera.lookAt(collisionPt);
     protonLight.intensity = 3;
-    capTimer = 1;                                               // keep the collision explanation on screen
-    if (!cbShown && arriveClock > 2.0){ cbShown = true; collisionBar.classList.remove('hidden'); }
+    if (!collFired){                                           // the two protons rush in from opposite sides, then smash
+      const cv = clamp(arriveClock / 2.4, 0, 1);
+      const gap = (1 - cv) * 26 + 0.25;
+      youProton.visible = true; otherProton.visible = true;
+      youProton.position.copy(collisionPt).addScaledVector(collisionTan, -gap);
+      otherProton.position.copy(collisionPt).addScaledVector(collisionTan, gap);
+      if (cv >= 1){ collFired = true; youProton.visible = false; otherProton.visible = false; fireCollision(); }
+    } else {
+      capTimer = 1;                                             // keep the collision explanation on screen
+      if (!cbShown && arriveClock > 3.2){ cbShown = true; collisionBar.classList.remove('hidden'); }
+    }
   } else {
     const { p, tan, side } = frameAt(t);
-    if (povMode === 'proton'){                                 // riding inside the beam pipe, looking forward
-      camera.position.copy(p).addScaledVector(upV, 0.7);
-      camTarget.copy(p).addScaledVector(tan, 12).addScaledVector(upV, -0.1);
+    if (povMode === 'proton'){                                 // chase-cam behind the proton
+      camera.position.copy(p).addScaledVector(tan, -5).addScaledVector(upV, 1.0);
+      camTarget.copy(p).addScaledVector(tan, 10);
     } else {                                                   // cinematic ride-along beside the magnet line
       camera.position.copy(p).addScaledVector(side, 3.4).addScaledVector(upV, 0.7);
       camTarget.copy(p).addScaledVector(tan, 8);
@@ -366,6 +385,8 @@ function updateCamera(dt){
     camera.lookAt(camTarget);
     camera.rotateY(-mouseX * 0.5); camera.rotateX(-mouseY * 0.32);
     protonLight.intensity = 16;
+    youProton.position.copy(p); youProton.visible = (povMode === 'proton');   // chase target
+    otherProton.visible = false;
     if (nextStation < stations.length && t >= stations[nextStation].t){ showStation(stations[nextStation]); nextStation++; }
   }
   document.getElementById('progress').style.width = (Math.min(t / 0.972, 1) * 100).toFixed(1) + '%';
@@ -388,7 +409,7 @@ animate();
 
 // ---------- Flow ----------
 const startOv = document.getElementById('start'), endOv = document.getElementById('end'), hud = document.getElementById('hud');
-function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); collisionBar.classList.add('hidden'); youAre.classList.remove('hidden'); legend.classList.add('hidden'); povBtn.classList.remove('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; }
+function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); collisionBar.classList.add('hidden'); youAre.classList.remove('hidden'); legend.classList.add('hidden'); povBtn.classList.remove('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; collFired=false; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; youProton.visible=false; otherProton.visible=false; }
 function finish(){ done=true; riding=false; setTimeout(()=>{ endOv.classList.remove('hidden'); hud.classList.remove('on'); }, 1700); }
 document.getElementById('startBtn').onclick = begin;
 document.getElementById('againBtn').onclick = begin;
@@ -403,7 +424,7 @@ function enterFree(){
   riding = false; arrived = false; freeRoam = true;
   startOv.classList.add('hidden'); endOv.classList.add('hidden');
   hud.classList.remove('on'); capEl.classList.remove('on'); collisionBar.classList.add('hidden');
-  youAre.classList.add('hidden'); legend.classList.remove('hidden');
+  youAre.classList.add('hidden'); legend.classList.remove('hidden'); youProton.visible = false; otherProton.visible = false;
   freeBtn.classList.add('hidden'); povBtn.classList.add('hidden'); freeHint.classList.remove('hidden');
   const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); yaw = e.y; pitch = e.x;
 }
@@ -423,7 +444,7 @@ addEventListener('mousemove', e => {
   if (freeRoam){ yaw -= dx * 0.0026; pitch = clamp(pitch - dy * 0.0026, -1.45, 1.45); }
   else if (arrived){ orbAz -= dx * 0.006; orbEl = clamp(orbEl + dy * 0.06, -8, 18); }
 });
-document.getElementById('replayBtn').onclick = () => { if (spray){ scene.remove(spray); spray = null; } arriveClock = 0; cbShown = false; collisionBar.classList.add('hidden'); fireCollision(); };
+document.getElementById('replayBtn').onclick = () => { if (spray){ scene.remove(spray); spray = null; } arriveClock = 0; collFired = false; cbShown = false; flashLife = -1; flash.material.opacity = 0; collisionBar.classList.add('hidden'); };
 document.getElementById('cbRide').onclick = () => { collisionBar.classList.add('hidden'); begin(); };
 document.getElementById('cbFree').onclick = () => { collisionBar.classList.add('hidden'); enterFree(); };
 addEventListener('keydown', e => { if (!freeRoam) return; switch(e.code){
