@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Inside the LHC — a proton's-eye walkthrough</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #05060a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #eaf2ff; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 24px; bottom: 22px; pointer-events: none; opacity: 0; transition: opacity .6s; }
+  #hud.on { opacity: 1; }
+  .readout { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .readout .label { font-size: 11px; text-transform: uppercase; letter-spacing: .18em; color: #7f9bd6; }
+  .readout .val { font-size: 30px; font-weight: 650; line-height: 1.05; }
+  .readout .val small { font-size: 15px; font-weight: 500; color: #9fb6e6; }
+  #energy { margin-bottom: 14px; }
+  #energy .val { color: #ffd24d; }
+  #speed .val { color: #6ff0ff; }
+  #caption { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(12px);
+             max-width: 620px; width: calc(100% - 48px); text-align: center;
+             background: rgba(8,12,22,.66); backdrop-filter: blur(8px);
+             border: 1px solid rgba(120,150,220,.22); border-radius: 14px;
+             padding: 16px 22px; opacity: 0; transition: opacity .5s, transform .5s; pointer-events: none; }
+  #caption.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #caption h2 { font-size: 15px; margin-bottom: 5px; color: #cfe0ff; }
+  #caption p { font-size: 13.5px; line-height: 1.5; color: #a9bde4; }
+  #progress { position: fixed; left: 0; top: 0; height: 3px; width: 0%;
+              background: linear-gradient(90deg,#6ff0ff,#ffd24d); box-shadow: 0 0 12px #6ff0ff; z-index: 5; transition: width .1s linear; }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+             text-align: center; padding: 24px; z-index: 10;
+             background: radial-gradient(ellipse at center, rgba(12,18,34,.66), rgba(4,5,10,.94)); transition: opacity .8s; }
+  .overlay.hidden { opacity: 0; pointer-events: none; }
+  .overlay h1 { font-size: clamp(30px, 6vw, 56px); font-weight: 700; letter-spacing: -.01em;
+                background: linear-gradient(90deg,#eaf2ff,#7fb0ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .overlay .sub { margin-top: 14px; font-size: 16px; color: #9fb6e6; max-width: 520px; line-height: 1.55; }
+  .btn { margin-top: 30px; pointer-events: auto; cursor: pointer; border: none;
+         font: inherit; font-size: 16px; font-weight: 600; color: #041018;
+         background: linear-gradient(90deg,#6ff0ff,#8fd0ff); padding: 14px 34px; border-radius: 999px;
+         box-shadow: 0 8px 30px rgba(111,240,255,.35); transition: transform .15s, box-shadow .15s; }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(111,240,255,.5); }
+  .hint { margin-top: 20px; font-size: 12.5px; color: #6f86b8; letter-spacing: .04em; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 20; background:#05060a; color:#7f9bd6; font-size:14px; letter-spacing:.1em; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="progress"></div>
+<div id="hud">
+  <div id="energy" class="readout"><div class="label">Beam energy</div><div class="val"><span id="energyVal">450</span> <small id="energyUnit">GeV</small></div></div>
+  <div id="speed" class="readout"><div class="label">Speed</div><div class="val"><span id="speedVal">99.9998</span><small>% c</small></div></div>
+</div>
+<div id="caption"><h2 id="capTitle"></h2><p id="capBody"></p></div>
+<div id="loading">initializing beamline…</div>
+<div id="start" class="overlay hidden">
+  <h1>You are a proton.</h1>
+  <div class="sub">Ride the path a proton takes through CERN's Large Hadron Collider — 27 kilometres of ring, 100 metres underground — from injection to collision.</div>
+  <button class="btn" id="startBtn">Begin the ride</button>
+  <div class="hint">move your mouse to look around · this is a guided, on-rails tour</div>
+</div>
+<div id="end" class="overlay hidden">
+  <h1>13.6 TeV.</h1>
+  <div class="sub">You just rode a proton through the most powerful accelerator ever built and watched it collide inside ATLAS. Every number here is real.</div>
+  <button class="btn" id="againBtn">Ride again</button>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const container = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x06070c);
+scene.fog = new THREE.FogExp2(0x06070c, 0.0065);
+const camera = new THREE.PerspectiveCamera(74, innerWidth / innerHeight, 0.1, 3000);
+
+// ---------- Environment: real reflections (RoomEnvironment now, HDRI when it loads) ----------
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; // instant fallback
+new RGBELoader()
+  .load('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/aerodynamics_workshop_1k.hdr',
+    (hdr) => { hdr.mapping = THREE.EquirectangularReflectionMapping; scene.environment = pmrem.fromEquirectangular(hdr).texture; hdr.dispose(); },
+    undefined, () => {/* keep RoomEnvironment fallback if CDN blocked */});
+
+// ---------- Path (a swept arc of the ring, gentle descent) ----------
+const R = 260, arc = Math.PI * 1.55, segs = 40;
+const pts = [];
+for (let i = 0; i <= segs; i++) {
+  const a = -arc/2 + arc * i/segs;
+  pts.push(new THREE.Vector3(Math.cos(a) * R, Math.sin(i/segs * Math.PI) * -6, Math.sin(a) * R));
+}
+const path = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+const pathLen = path.getLength();
+const upV = new THREE.Vector3(0, 1, 0);
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+function frameAt(t){
+  const p = path.getPointAt(clamp(t,0,1));
+  const tan = path.getTangentAt(clamp(t,0,0.999)).normalize();
+  const side = new THREE.Vector3().crossVectors(tan, upV).normalize();
+  return { p, tan, side };
+}
+
+// ---------- Tunnel (concrete, lit enough to see the machinery) ----------
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(path, 800, 6.4, 28, false),
+  new THREE.MeshStandardMaterial({ color: 0x33373f, roughness: 0.95, metalness: 0.02, side: THREE.BackSide })));
+
+// ---------- Beam pipe (glowing core) ----------
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(path, 800, 0.14, 8, false), new THREE.MeshBasicMaterial({ color: 0xffc257 })));
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(path, 800, 0.42, 8, false), new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.14 })));
+
+// ---------- Dipole magnets: continuous line of blue flanged cryostats ----------
+const MOD = 5.4;                              // module length
+const N = Math.floor(pathLen / MOD);          // ~200 modules end-to-end
+const cryoMat = new THREE.MeshPhysicalMaterial({ color: 0x1c50d8, metalness: 0.35, roughness: 0.34, clearcoat: 0.7, clearcoatRoughness: 0.28 });
+const steelMat = new THREE.MeshStandardMaterial({ color: 0x9da2ab, metalness: 1.0, roughness: 0.28 });     // machined steel flanges
+const cradleMat = new THREE.MeshStandardMaterial({ color: 0x30333b, metalness: 0.85, roughness: 0.5 });    // dark support steel
+
+const cryoGeo = new THREE.CylinderGeometry(1.55, 1.55, MOD * 0.9, 26);
+const flangeGeo = new THREE.CylinderGeometry(1.74, 1.74, 0.42, 28);
+const cradleGeo = new THREE.BoxGeometry(1.3, 1.2, 2.4);
+
+const cryo = new THREE.InstancedMesh(cryoGeo, cryoMat, N);
+const flanges = new THREE.InstancedMesh(flangeGeo, steelMat, N * 2);
+const cradles = new THREE.InstancedMesh(cradleGeo, cradleMat, N);
+const d = new THREE.Object3D(), q = new THREE.Quaternion(), yAxis = new THREE.Vector3(0,1,0);
+let fi = 0;
+for (let i = 0; i < N; i++) {
+  const t = (i + 0.5) / N;
+  const { p, tan } = frameAt(t);
+  q.setFromUnitVectors(yAxis, tan);
+  d.position.copy(p); d.quaternion.copy(q); d.updateMatrix(); cryo.setMatrixAt(i, d.matrix);
+  for (const e of [-MOD*0.47, MOD*0.47]) {
+    d.position.copy(p).addScaledVector(tan, e); d.quaternion.copy(q); d.updateMatrix(); flanges.setMatrixAt(fi++, d.matrix);
+  }
+  d.position.copy(p).addScaledVector(upV, -1.85); d.quaternion.copy(q); d.updateMatrix(); cradles.setMatrixAt(i, d.matrix);
+}
+cryo.instanceMatrix.needsUpdate = flanges.instanceMatrix.needsUpdate = cradles.instanceMatrix.needsUpdate = true;
+scene.add(cryo, flanges, cradles);
+
+// ---------- Lighting ----------
+scene.add(new THREE.HemisphereLight(0x9fc0ff, 0x0a0c12, 0.8));
+scene.add(new THREE.AmbientLight(0x2a3346, 0.6));
+const keyLights = [];
+for (let i = 0; i < 12; i++) { const l = new THREE.PointLight(0xbcd6ff, 26, 70, 2.0); scene.add(l); keyLights.push(l); }
+const protonLight = new THREE.PointLight(0xffc070, 16, 46, 2.0); scene.add(protonLight);
+
+// ---------- ATLAS detector + collision ----------
+const collisionPt = path.getPointAt(0.988), collisionTan = path.getTangentAt(0.988);
+const detector = new THREE.Group(); detector.visible = false;
+const layerColors = [0x4a7dff, 0x2fb0c0, 0xe0842f, 0xd04a40];
+for (let i = 0; i < 4; i++) {
+  const rad = 2.6 + i*2.15;
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, 12, 48, 1, true),
+    new THREE.MeshStandardMaterial({ color: layerColors[i], roughness: 0.45, metalness: 0.6, side: THREE.DoubleSide, transparent: true, opacity: 0.26, emissive: layerColors[i], emissiveIntensity: 0.15 }));
+  ring.rotation.z = Math.PI/2; detector.add(ring);
+  for (const zc of [-6, 6]) {   // end-cap wheels
+    const cap = new THREE.Mesh(new THREE.TorusGeometry(rad, 0.16, 8, 44), new THREE.MeshStandardMaterial({ color: 0xaeb6c4, metalness: 1, roughness: 0.3 }));
+    cap.position.set(zc, 0, 0); cap.rotation.y = Math.PI/2; detector.add(cap);
+  }
+}
+detector.position.copy(collisionPt); detector.quaternion.setFromUnitVectors(yAxis, collisionTan);
+scene.add(detector);
+const collisionLight = new THREE.PointLight(0xbfefff, 0, 60, 2.0); collisionLight.position.copy(collisionPt); scene.add(collisionLight);
+const flash = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+flash.position.copy(collisionPt); scene.add(flash);
+let flashLife = -1;
+let spray = null;
+function fireCollision(){
+  detector.visible = true; flashLife = 0;
+  const M = 520, g = new THREE.BufferGeometry(), pos = new Float32Array(M*6), dirs = [];
+  for (let i=0;i<M;i++){ const dir = new THREE.Vector3().randomDirection(); dirs.push(dir); const o=collisionPt; pos.set([o.x,o.y,o.z,o.x,o.y,o.z], i*6); }
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  spray = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xa8f4ff, transparent:true, opacity:0.95, blending: THREE.AdditiveBlending, depthWrite:false }));
+  spray.userData = { dirs, life: 0, origin: collisionPt.clone() }; scene.add(spray);
+  showStation(collisionCap);
+}
+function updateSpray(dt){
+  if (flashLife >= 0){ flashLife += dt; flash.scale.setScalar(1 + flashLife*46); flash.material.opacity = Math.max(0, 1 - flashLife*1.7); collisionLight.intensity = Math.max(0, 90 * (1 - flashLife*1.4)); }
+  if(!spray) return; spray.userData.life += dt; const L = spray.userData.life;
+  const pos = spray.geometry.attributes.position.array, { dirs, origin } = spray.userData;
+  for(let i=0;i<dirs.length;i++){ const reach=Math.min(L*58,22+i%16), tail=Math.max(0,reach-3.6);
+    const ax=origin.x+dirs[i].x*tail, ay=origin.y+dirs[i].y*tail, az=origin.z+dirs[i].z*tail;
+    const bx=origin.x+dirs[i].x*reach, by=origin.y+dirs[i].y*reach, bz=origin.z+dirs[i].z*reach;
+    pos.set([ax,ay,az,bx,by,bz], i*6); }
+  spray.geometry.attributes.position.needsUpdate = true; spray.material.opacity = Math.max(0, 0.95 - L*0.14);
+}
+
+// ---------- Stations ----------
+const stations = [
+  { t: 0.02, title: 'Injection · 450 GeV', body: "You enter the LHC from the SPS at 450 GeV, already at 99.9998% the speed of light, into a ring 27 km around and 100 m underground." },
+  { t: 0.22, title: '1,232 dipole magnets', body: 'These blue superconducting dipoles bend your path around the ring. They run at 1.9 K — colder than outer space — cooled by superfluid helium.' },
+  { t: 0.45, title: 'RF cavities · the kick', body: 'Radiofrequency cavities add energy on every pass. You now circle the ring about 11,245 times every second.' },
+  { t: 0.66, title: 'Energy ramp', body: 'The magnetic field rises in lock-step with your energy, winding you up toward 6.8 TeV per beam.' },
+  { t: 0.86, title: 'Steering to ATLAS', body: 'Focusing quadrupoles squeeze the beam and steer you toward an interaction point. Ahead: the ATLAS detector.' },
+];
+const collisionCap = { title: 'Collision · 13.6 TeV', body: 'Two proton beams cross head-on. Energy becomes matter — a spray of new particles bursts through the detector layers.' };
+let nextStation = 0, capTimer = 0;
+const capEl = document.getElementById('caption'), capTitle = document.getElementById('capTitle'), capBody = document.getElementById('capBody');
+function showStation(s){ capTitle.textContent = s.title; capBody.textContent = s.body; capEl.classList.add('on'); capTimer = 5.4; }
+
+// ---------- HUD ----------
+const energyVal = document.getElementById('energyVal'), energyUnit = document.getElementById('energyUnit'), speedVal = document.getElementById('speedVal');
+function updateHUD(t){
+  const ramp = clamp((t - 0.15) / 0.6, 0, 1);
+  const e = 450 + (6800 - 450) * ramp;
+  if (e >= 1000) { energyVal.textContent = (e/1000).toFixed(2); energyUnit.textContent = 'TeV'; }
+  else { energyVal.textContent = Math.round(e); energyUnit.textContent = 'GeV'; }
+  const nines = 6 + ramp * 3;
+  speedVal.textContent = (100 - Math.pow(10, -nines) * 100).toFixed(clamp(Math.floor(nines),4,7));
+}
+
+// ---------- On-rails camera (offset beside the magnet line, converging to axis at collision) ----------
+let mouseX = 0, mouseY = 0;
+addEventListener('mousemove', e => { mouseX = (e.clientX/innerWidth - 0.5)*2; mouseY = (e.clientY/innerHeight - 0.5)*2; });
+let riding = false, t = 0, done = false, arrived = false, arriveClock = 0;
+const RIDE_SECONDS = 46;
+const camTarget = new THREE.Vector3();
+function updateCamera(dt){
+  if (riding && !done && !arrived){ t += dt / RIDE_SECONDS; if (t >= 0.972){ t = 0.972; arrived = true; arriveClock = 0; fireCollision(); } }
+  if (arrived){
+    arriveClock += dt;
+    const f = frameAt(0.985);
+    const ang = 0.35 + arriveClock * 0.22;                      // slow orbit around the collision
+    camera.position.copy(collisionPt)
+      .addScaledVector(f.side, Math.cos(ang) * 11 + 1.5)
+      .addScaledVector(upV, 5.2)
+      .addScaledVector(f.tan, -8 + Math.sin(ang) * 3);
+    camera.lookAt(collisionPt);
+    camera.rotateY(-mouseX * 0.22); camera.rotateX(-mouseY * 0.16);
+    protonLight.intensity = 4;
+    if (arriveClock > 3.8 && !done) finish();
+  } else {
+    const { p, tan, side } = frameAt(t);
+    camera.position.copy(p).addScaledVector(side, 3.4).addScaledVector(upV, 0.7);
+    camTarget.copy(p).addScaledVector(tan, 8);
+    camera.lookAt(camTarget);
+    camera.rotateY(-mouseX * 0.5); camera.rotateX(-mouseY * 0.32);
+    protonLight.intensity = 16;
+    if (nextStation < stations.length && t >= stations[nextStation].t){ showStation(stations[nextStation]); nextStation++; }
+  }
+  document.getElementById('progress').style.width = (Math.min(t / 0.972, 1) * 100).toFixed(1) + '%';
+  updateHUD(t);
+}
+
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  updateCamera(dt); updateSpray(dt);
+  for (let i=0;i<keyLights.length;i++){ const lt = clamp(t + (i - keyLights.length/2)*0.022, 0, 1); keyLights[i].position.copy(path.getPointAt(lt)).addScaledVector(upV, 3.2); }
+  protonLight.position.copy(camera.position);
+  if (capTimer > 0){ capTimer -= dt; if (capTimer <= 0) capEl.classList.remove('on'); }
+  renderer.render(scene, camera);
+}
+animate();
+
+// ---------- Flow ----------
+const startOv = document.getElementById('start'), endOv = document.getElementById('end'), hud = document.getElementById('hud');
+function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; }
+function finish(){ done=true; riding=false; setTimeout(()=>{ endOv.classList.remove('hidden'); hud.classList.remove('on'); }, 1700); }
+document.getElementById('startBtn').onclick = begin;
+document.getElementById('againBtn').onclick = begin;
+addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+document.getElementById('loading').style.display = 'none';
+startOv.classList.remove('hidden');
+</script>
+</body>
+</html>
