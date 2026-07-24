@@ -55,6 +55,13 @@
              border: 1px solid rgba(120,150,220,.3); border-radius: 999px; padding: 8px 16px; backdrop-filter: blur(6px); transition: background .15s; }
   #freeBtn:hover { background: rgba(40,56,96,.8); }
   #freeBtn.hidden { display: none; }
+  #youAre { position: fixed; top: 15px; left: 18px; z-index: 7; font-size: 12.5px; font-weight: 600; color: #cfe0ff;
+            background: rgba(20,28,48,.5); border: 1px solid rgba(120,150,220,.25); border-radius: 999px; padding: 7px 15px; backdrop-filter: blur(6px); }
+  #youAre.hidden { display: none; }
+  #legend { position: fixed; left: 50%; top: 54px; transform: translateX(-50%); z-index: 7; font-size: 11.5px; color: #9fb6e6;
+            background: rgba(8,12,22,.55); border: 1px solid rgba(120,150,220,.2); border-radius: 999px; padding: 7px 15px; white-space: nowrap; backdrop-filter: blur(6px); }
+  #legend b { color: #cfe0ff; }
+  #legend.hidden { display: none; }
   #collisionBar { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); z-index: 9; display: flex; gap: 10px; }
   #collisionBar.hidden { display: none; }
   #collisionBar button { pointer-events: auto; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
@@ -77,11 +84,13 @@
   <div id="energy" class="readout"><div class="label">Beam energy</div><div class="val"><span id="energyVal">450</span> <small id="energyUnit">GeV</small></div></div>
   <div id="speed" class="readout"><div class="label">Speed</div><div class="val"><span id="speedVal">99.9998</span><small>% c</small></div></div>
 </div>
+<div id="youAre" class="hidden">&#9673; You are a proton, riding the beam</div>
+<div id="legend" class="hidden"><b>Blue</b> bending magnets &middot; <b>Copper</b> accelerators &middot; <b>Red</b> aiming magnets &middot; <b>Barrel</b> the detector</div>
 <div id="caption"><h2 id="capTitle"></h2><p id="capBody"></p></div>
 <div id="loading">initializing beamline…</div>
 <div id="start" class="overlay hidden">
   <h1>You are a proton.</h1>
-  <div class="sub">Ride the path a proton takes through CERN's Large Hadron Collider — 27 kilometres of ring, 100 metres underground — from injection to collision.</div>
+  <div class="sub">A proton is one of the tiny particles inside every atom. You're about to be whipped around CERN's Large Hadron Collider - a 27 km ring buried under Switzerland - sped up to almost the speed of light, and smashed into another proton head-on. That crash is how scientists discover what the universe is made of. Take the ride, then explore it yourself.</div>
   <button class="btn" id="startBtn">Begin the ride</button>
   <div class="hint">move your mouse to look around · this is a guided, on-rails tour</div>
 </div>
@@ -272,11 +281,12 @@ function updateSpray(dt){
 
 // ---------- Component labels (projected HTML, shown in free-roam) ----------
 const labelDefs = [
-  { n:'Beam pipe', d:'Protons fly through this vacuum tube', pos: path.getPointAt(0.06) },
-  { n:'Dipole magnet', d:'Bends the beam - 1,232 at 1.9 K', pos: path.getPointAt(0.12) },
-  { n:'RF cavity', d:'Accelerates protons each lap', pos: rfAnchor },
-  { n:'Quadrupole', d:'Focuses & steers the beam', pos: quadAnchor },
-  { n:'ATLAS detector', d:'Where the beams collide', pos: collisionPt.clone() },
+  { n:'Beam pipe', d:'You travel inside this vacuum tube', pos: path.getPointAt(0.06) },
+  { n:'Bending magnet', d:'Blue - curves your path (dipole)', pos: path.getPointAt(0.12) },
+  { n:'Accelerator', d:'Copper - speeds you up (RF cavity)', pos: rfAnchor },
+  { n:'Aiming magnet', d:'Red - focuses the beam (quadrupole)', pos: quadAnchor },
+  { n:'ATLAS detector', d:'Records where new particles fly', pos: collisionPt.clone() },
+  { n:'Beam pipe', d:'You (a proton) travel inside this', pos: path.getPointAt(0.955) },
 ];
 const labelsEl = document.getElementById('labels');
 const labelNodes = labelDefs.map(L => { const el = document.createElement('div'); el.className = 'label3d hidden'; el.innerHTML = `<div class="n">${L.n}</div><div class="d">${L.d}</div>`; labelsEl.appendChild(el); return el; });
@@ -295,13 +305,13 @@ function updateLabels(show){
 
 // ---------- Stations ----------
 const stations = [
-  { t: 0.02, title: 'Injection · 450 GeV', body: "You enter the LHC from the SPS at 450 GeV, already at 99.9998% the speed of light, into a ring 27 km around and 100 m underground." },
-  { t: 0.22, title: '1,232 dipole magnets', body: 'These blue superconducting dipoles bend your path around the ring. They run at 1.9 K — colder than outer space — cooled by superfluid helium.' },
-  { t: 0.45, title: 'RF cavities · the kick', body: 'Radiofrequency cavities add energy on every pass. You now circle the ring about 11,245 times every second.' },
-  { t: 0.66, title: 'Energy ramp', body: 'The magnetic field rises in lock-step with your energy, winding you up toward 6.8 TeV per beam.' },
-  { t: 0.86, title: 'Steering to ATLAS', body: 'Focusing quadrupoles squeeze the beam and steer you toward an interaction point. Ahead: the ATLAS detector.' },
+  { t: 0.02, title: 'You are a proton', body: "You're a proton - a speck from inside an atom - just launched into the ring at almost the speed of light. The blue tube ahead is the beam pipe; you travel inside it, in a vacuum emptier than outer space." },
+  { t: 0.22, title: 'The blue bending magnets', body: 'These blue magnets curve your path so you loop around the ring instead of flying off straight. There are 1,232 of them, chilled to -271 C - colder than deep space - so they can steer you without wasting energy.' },
+  { t: 0.45, title: 'The copper accelerators', body: 'Each copper chamber gives you a kick of energy as you pass through - like a well-timed push on a swing. You now loop the entire 27 km ring about 11,245 times every second.' },
+  { t: 0.66, title: 'Faster and faster', body: 'Your energy keeps climbing - toward 6.8 trillion electron-volts. The magnets ramp up in step with you to keep you on the ring.' },
+  { t: 0.86, title: 'The red aiming magnets', body: 'These red magnets squeeze the beam down to a needle-thin point and aim you into the detector ahead, where you will hit another proton head-on.' },
 ];
-const collisionCap = { title: 'Collision · 13.6 TeV', body: 'Two proton beams cross head-on. Energy becomes matter — a spray of new particles bursts through the detector layers.' };
+const collisionCap = { title: 'The collision', body: "You're now inside the ATLAS detector - the giant barrel of sensor layers around you. You (the proton) just hit another proton coming the other way, and the crash energy turned into a spray of brand-new particles. Measuring where they fly is how physicists find out what the universe is made of." };
 let nextStation = 0, capTimer = 0;
 const capEl = document.getElementById('caption'), capTitle = document.getElementById('capTitle'), capBody = document.getElementById('capBody');
 function showStation(s){ capTitle.textContent = s.title; capBody.textContent = s.body; capEl.classList.add('on'); capTimer = 5.4; }
@@ -324,7 +334,7 @@ let riding = false, t = 0, done = false, arrived = false, arriveClock = 0, freeR
 let orbAz = 0.5, orbEl = 5.4, orbR = 14, cbShown = false;
 const RIDE_SECONDS = 46;
 const camTarget = new THREE.Vector3(), heroPos = new THREE.Vector3();
-const collisionBar = document.getElementById('collisionBar');
+const collisionBar = document.getElementById('collisionBar'), youAre = document.getElementById('youAre'), legend = document.getElementById('legend');
 function updateCamera(dt){
   if (riding && !done && !arrived){ t += dt / RIDE_SECONDS; if (t >= 0.972){ t = 0.972; arrived = true; arriveClock = 0; orbAz = 0.5; orbEl = 5.4; orbR = 14; cbShown = false; fireCollision(); } }
   if (arrived){
@@ -335,6 +345,7 @@ function updateCamera(dt){
     camera.position.lerp(heroPos, 0.09);                       // smooth glide in, then follow the orbit
     camera.lookAt(collisionPt);
     protonLight.intensity = 3;
+    capTimer = 1;                                               // keep the collision explanation on screen
     if (!cbShown && arriveClock > 2.0){ cbShown = true; collisionBar.classList.remove('hidden'); }
   } else {
     const { p, tan, side } = frameAt(t);
@@ -357,7 +368,7 @@ function animate(){
   updateSpray(dt);
   for (let i=0;i<keyLights.length;i++){ const lt = clamp(t + (i - keyLights.length/2)*0.022, 0, 1); keyLights[i].position.copy(path.getPointAt(lt)).addScaledVector(upV, 3.2); }
   protonLight.position.copy(camera.position);
-  updateLabels(freeRoam);
+  updateLabels(freeRoam || arrived);
   if (capTimer > 0){ capTimer -= dt; if (capTimer <= 0) capEl.classList.remove('on'); }
   renderer.render(scene, camera);
 }
@@ -365,7 +376,7 @@ animate();
 
 // ---------- Flow ----------
 const startOv = document.getElementById('start'), endOv = document.getElementById('end'), hud = document.getElementById('hud');
-function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); collisionBar.classList.add('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; }
+function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden'); collisionBar.classList.add('hidden'); youAre.classList.remove('hidden'); legend.classList.add('hidden'); hud.classList.add('on'); t=0; nextStation=0; done=false; riding=true; arrived=false; arriveClock=0; flashLife=-1; flash.material.opacity=0; collisionLight.intensity=0; if(spray){scene.remove(spray);spray=null;} detector.visible=false; }
 function finish(){ done=true; riding=false; setTimeout(()=>{ endOv.classList.remove('hidden'); hud.classList.remove('on'); }, 1700); }
 document.getElementById('startBtn').onclick = begin;
 document.getElementById('againBtn').onclick = begin;
@@ -380,6 +391,7 @@ function enterFree(){
   riding = false; arrived = false; freeRoam = true;
   startOv.classList.add('hidden'); endOv.classList.add('hidden');
   hud.classList.remove('on'); capEl.classList.remove('on'); collisionBar.classList.add('hidden');
+  youAre.classList.add('hidden'); legend.classList.remove('hidden');
   freeBtn.classList.add('hidden'); freeHint.classList.remove('hidden');
   const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); yaw = e.y; pitch = e.x;
 }
