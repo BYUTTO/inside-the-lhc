@@ -25,5 +25,5 @@ verified at build.
 
 ## Status
 - [x] On-rails first-person ride (demo path)
-- [ ] Free-roam mode (post-rails)
-- [ ] Material realism pass (PBR magnets/tunnel)
+- [x] Material realism pass (PBR magnets/tunnel + HDRI reflections)
+- [x] Free-roam mode (drag-to-look + WASD fly)
