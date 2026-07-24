@@ -276,7 +276,8 @@ function begin(){ startOv.classList.add('hidden'); endOv.classList.add('hidden')
 function finish(){ done=true; riding=false; setTimeout(()=>{ endOv.classList.remove('hidden'); hud.classList.remove('on'); }, 1700); }
 document.getElementById('startBtn').onclick = begin;
 document.getElementById('againBtn').onclick = begin;
-addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+function fit(){ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); }
+addEventListener('resize', fit); requestAnimationFrame(fit);
 document.getElementById('loading').style.display = 'none';
 startOv.classList.remove('hidden');
 </script>
